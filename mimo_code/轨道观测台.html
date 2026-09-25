@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>轨道观测台 · 太阳系 8 行星实时模拟</title>
+<meta name="description" content="轨道观测台 —— 用 HTML5 Canvas 绘制的太阳系行星运动模拟：8 颗行星沿各自轨道运行，含轨道线、行星名称与速度倍率控制。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#E9E5DA; --paper-light:#F4F1E8;
+  --ink:#101820; --ink-muted:#667078; --ink-faint:#A7AAA4;
+  --grid:#C7C5BC; --line-dark:#34444B;
+  --volt:#E4572E; --volt2:#2E7180; --orbit:#8C9694;
+  --sans:"Noto Sans SC","Source Han Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  --mono:"IBM Plex Mono","SFMono-Regular",Consolas,monospace;
+  --ease:cubic-bezier(.22,1,.36,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:var(--sans); font-size:15px; line-height:1.65;
+  overflow-x:hidden; -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+a{color:inherit;text-decoration:none}
+table{border-collapse:collapse;width:100%}
+:focus-visible{outline:2px solid var(--volt2);outline-offset:2px}
+.wrap{max-width:1440px;margin:0 auto;padding:0 32px}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--ink-muted);text-transform:uppercase}
+.mono{font-family:var(--mono)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ── Header ───────────────────────────── */
+.hdr{
+  height:72px;display:flex;align-items:center;gap:32px;
+  border-bottom:1px solid var(--grid);
+}
+.brand{display:flex;align-items:baseline;gap:12px;flex:0 0 auto}
+.wordmark{font-size:18px;font-weight:500;letter-spacing:.06em}
+.brand .meta{font-family:var(--mono);font-size:11px;color:var(--ink-muted);letter-spacing:.1em}
+.hdr-nav{display:flex;gap:28px;margin-left:24px}
+.hdr-nav a{font-size:13px;font-weight:500;color:var(--ink-muted);padding-bottom:2px;border-bottom:1px solid transparent;transition:color .16s,border-color .16s}
+.hdr-nav a:hover{color:var(--ink);border-bottom-color:var(--ink)}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:16px}
+.status{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--ink-muted)}
+.dot{width:7px;height:7px;background:var(--volt);border-radius:50%;flex:0 0 auto}
+.dot.paused{background:var(--ink-faint)}
+.pill{
+  display:flex;align-items:center;gap:8px;height:36px;padding:0 16px;
+  border:1px solid var(--ink);border-radius:999px;
+}
+.pill .lbl{font-family:var(--mono);font-size:11px;color:var(--ink-muted);letter-spacing:.08em}
+.pill .val{font-family:var(--mono);font-size:14px;font-weight:500;color:var(--volt)}
+.icon-btn{
+  width:36px;height:36px;display:grid;place-items:center;
+  border:1px solid var(--grid);transition:border-color .16s,color .16s;
+}
+.icon-btn:hover{border-color:var(--ink);color:var(--volt)}
+.icon-btn svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.5;fill:none;stroke-linecap:square;stroke-linejoin:miter}
+
+/* ── Stage ────────────────────────────── */
+.stage-zone{position:relative;height:78vh;min-height:540px;margin-right:-24px;margin-top:8px}
+.stage-canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.hero{position:absolute;top:14%;left:0;width:min(42%,560px);z-index:2;pointer-events:none}
+.hero h1{
+  font-size:clamp(48px,7vw,112px);font-weight:500;line-height:.95;
+  letter-spacing:-.01em;margin:20px 0 24px;
+}
+.hero .lede{font-size:15px;line-height:1.65;color:var(--ink-muted);max-width:34ch}
+.hero .eyebrow{padding-left:2px}
+.vlabel{
+  position:absolute;left:-26px;top:2px;
+  writing-mode:vertical-rl;transform:rotate(180deg);
+  font-family:var(--mono);font-size:11px;letter-spacing:.22em;color:var(--ink-faint);
+}
+.stage-foot{
+  position:absolute;left:0;right:24px;bottom:8px;z-index:2;
+  display:flex;gap:24px;font-family:var(--mono);font-size:11px;
+  letter-spacing:.12em;color:var(--ink-muted);pointer-events:none;
+}
+.stage-foot .right{margin-left:auto}
+
+/* ── Instrument strip ─────────────────── */
+.strip{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  border-top:1px solid var(--grid);border-bottom:1px solid var(--grid);
+  margin-top:24px;
+}
+.cell{padding:48px 32px 48px 0;border-left:1px solid var(--grid)}
+.cell:first-child{border-left:0;padding-left:0}
+.cell:not(:first-child){padding-left:32px}
+.cell h2{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.16em;color:var(--ink-muted);text-transform:uppercase;margin-bottom:16px}
+.speed-row{display:flex;align-items:center;gap:12px;height:48px}
+.step{
+  width:36px;height:36px;display:grid;place-items:center;border:1px solid var(--ink);
+  font-family:var(--mono);font-size:15px;line-height:1;transition:background .16s,color .16s;
+}
+.step:hover{background:var(--ink);color:var(--paper)}
+input[type=range]{
+  -webkit-appearance:none;appearance:none;flex:1 1 auto;min-width:80px;
+  height:36px;background:transparent;cursor:pointer;
+}
+input[type=range]::-webkit-slider-runnable-track{height:2px;background:linear-gradient(to right,var(--volt) var(--fill,20%),var(--ink-faint) var(--fill,20%))}
+input[type=range]::-moz-range-track{height:2px;background:var(--ink-faint)}
+input[type=range]::-moz-range-progress{height:2px;background:var(--volt)}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+  background:var(--volt);border:0;margin-top:-6px;
+}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--volt);border:0}
+.speed-val{font-family:var(--mono);font-size:14px;font-weight:500;color:var(--volt);min-width:52px;text-align:right}
+.presets{display:flex;gap:8px;margin-top:16px}
+.presets button{
+  height:36px;min-width:60px;padding:0 12px;border:1px solid var(--grid);
+  font-family:var(--mono);font-size:12px;letter-spacing:.06em;
+  transition:border-color .16s,color .16s,background .16s;
+}
+.presets button:hover{border-color:var(--ink)}
+.presets button[aria-pressed=true]{border-color:var(--volt);color:var(--volt);background:var(--paper-light)}
+.big-val{font-family:var(--mono);font-size:34px;font-weight:500;line-height:1.1;letter-spacing:.02em}
+.sub-val{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--ink-muted);margin-top:8px}
+.sel-name{display:flex;align-items:baseline;gap:12px}
+.sel-name .idx{font-family:var(--mono);font-size:11px;color:var(--volt);letter-spacing:.12em}
+.nav-row{display:flex;gap:8px;margin-top:24px}
+.nav-btn{
+  height:36px;min-width:88px;display:inline-flex;align-items:center;gap:8px;
+  justify-content:center;padding:0 14px;border:1px solid var(--ink);
+  font-size:13px;font-weight:500;transition:background .16s,color .16s;
+}
+.nav-btn:hover{background:var(--ink);color:var(--paper)}
+.nav-btn svg{width:14px;height:14px;stroke:currentColor;stroke-width:1.5;fill:none}
+.status-line{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:14px;font-weight:500}
+.status-line .dot{width:8px;height:8px}
+.clock{margin-top:16px;font-family:var(--mono);font-size:34px;font-weight:500;letter-spacing:.02em;line-height:1.1}
+.clock small{display:block;font-size:11px;letter-spacing:.14em;color:var(--ink-muted);font-weight:400;margin-bottom:6px}
+.play-btn{
+  margin-top:24px;height:36px;min-width:88px;display:inline-flex;align-items:center;
+  gap:8px;justify-content:center;padding:0 16px;border:1px solid var(--ink);font-size:13px;font-weight:500;
+  transition:background .16s,color .16s;
+}
+.play-btn:hover{background:var(--ink);color:var(--paper)}
+.play-btn svg{width:14px;height:14px;stroke:currentColor;stroke-width:1.5;fill:none}
+
+/* ── Ledger ───────────────────────────── */
+.ledger{padding:96px 0 64px}
+.ledger-head{display:flex;align-items:baseline;gap:24px;margin-bottom:32px}
+.ledger-head h2{font-size:28px;font-weight:500;line-height:1.2}
+.table-scroll{overflow-x:auto}
+table{font-family:var(--mono);font-size:14px}
+thead th{
+  font-size:11px;font-weight:400;letter-spacing:.12em;color:var(--ink-muted);
+  text-align:left;padding:0 16px 12px 0;border-bottom:1px solid var(--ink);white-space:nowrap;
+}
+tbody tr{position:relative;height:56px;border-bottom:1px solid var(--grid);transition:background .16s}
+tbody tr:hover{background:var(--paper-light)}
+tbody tr.sel{background:var(--paper-light)}
+tbody tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--volt)}
+tbody td{padding:0 16px 0 0;white-space:nowrap;color:var(--ink)}
+tbody td.zh{font-family:var(--sans);font-size:15px;font-weight:500}
+tbody td.en{color:var(--ink-muted);letter-spacing:.04em}
+tbody td.num{color:var(--ink-muted)}
+tbody tr.sel td.zh,tbody tr.sel td.val{color:var(--ink)}
+tbody tr.sel td.val{font-weight:500}
+td:first-child{padding-left:14px}
+.mark{
+  width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--grid);
+  font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--ink-muted);
+  transition:border-color .16s,color .16s,background .16s;
+}
+tr:hover .mark{border-color:var(--ink)}
+tr.sel .mark{background:var(--volt);border-color:var(--volt);color:var(--paper-light)}
+tr.sweep::after{
+  content:"";position:absolute;left:0;right:0;top:0;height:2px;background:var(--volt);
+  transform-origin:left;animation:sweep .36s var(--ease) forwards;
+}
+@keyframes sweep{0%{transform:scaleX(0);opacity:1}80%{opacity:1}100%{transform:scaleX(1);opacity:0}}
+.tip-wrap{position:relative;display:inline-flex;align-items:center;gap:6px}
+.tip-icon{
+  width:16px;height:16px;border:1px solid var(--ink-faint);border-radius:50%;
+  font-family:var(--mono);font-size:10px;line-height:1;color:var(--ink-muted);
+  display:grid;place-items:center;
+}
+.tip{
+  position:absolute;bottom:calc(100% + 8px);left:-8px;width:200px;padding:12px;
+  background:var(--paper-light);border:1px solid var(--ink);
+  font-family:var(--sans);font-size:13px;line-height:1.5;white-space:normal;
+  opacity:0;visibility:hidden;transition:opacity .16s;z-index:5;
+}
+.tip-wrap:hover .tip,.tip-icon:focus-visible + .tip{opacity:1;visibility:visible}
+.scroll-hint{display:none;font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--ink-muted);margin-top:16px}
+
+/* ── Footer ───────────────────────────── */
+.foot{border-top:1px solid var(--ink);padding:48px 0 64px;display:flex;gap:48px;flex-wrap:wrap}
+.foot .notes p{font-family:var(--mono);font-size:11px;line-height:2;letter-spacing:.06em;color:var(--ink-muted)}
+.foot .foot-meta{margin-left:auto;display:flex;flex-direction:column;gap:8px;align-items:flex-end;
+  font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--ink-faint);text-align:right}
+
+/* ── Responsive ───────────────────────── */
+@media (max-width:1100px){
+  .hero{width:min(48%,460px)}
+  .hero h1{font-size:clamp(40px,6vw,72px)}
+}
+@media (max-width:800px){
+  .wrap{padding:0 20px}
+  .hdr{height:60px;gap:16px}
+  .hdr-nav{display:none}
+  .brand .meta{display:none}
+  .pill .lbl{display:none}
+  .pill{padding:0 12px}
+  .stage-zone{height:auto;min-height:0;margin-right:0}
+  .hero{position:static;width:100%;padding:48px 0 32px}
+  .hero h1{font-size:clamp(36px,9vw,56px);margin:16px 0 20px}
+  .vlabel{display:none}
+  .canvas-holder{position:relative;width:100%;aspect-ratio:1/1;max-height:720px}
+  .stage-foot{position:static;flex-wrap:wrap;gap:12px;padding:16px 0 0;right:0}
+  .stage-foot .right{margin-left:0}
+  .strip{grid-template-columns:1fr}
+  .cell{border-left:0;border-top:1px solid var(--grid);padding:32px 0}
+  .cell:first-child{border-top:0}
+  .cell:not(:first-child){padding-left:0}
+  .ledger{padding:64px 0 48px}
+  .scroll-hint{display:block}
+  .foot{gap:32px}
+  .foot .foot-meta{margin-left:0;align-items:flex-start;text-align:left}
+}
+@media (max-width:420px){
+  .wrap{padding:0 24px}
+  .hero h1{font-size:36px}
+  .clock,.big-val{font-size:28px}
+  input[type=range]{height:36px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms!important;transition-duration:.001ms!important}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <!-- ── OBSERVATORY HEADER ── -->
+  <header class="hdr">
+    <div class="brand">
+      <span class="wordmark">轨道观测台</span>
+      <span class="meta">太阳系 / 8 行星</span>
+    </div>
+    <nav class="hdr-nav" aria-label="主导航">
+      <a href="#stage">总览</a>
+      <a href="#ledger">行星数据</a>
+      <a href="#notes">说明</a>
+    </nav>
+    <div class="hdr-right">
+      <span class="status"><span class="dot" id="hdrDot"></span><span id="hdrStatus">实时模拟</span></span>
+      <span class="pill"><span class="lbl">当前速度</span><span class="val" id="pillSpeed">1.0×</span></span>
+      <button class="icon-btn" id="btnInfo" aria-label="查看说明">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>
+      </button>
+      <button class="icon-btn" id="btnReset" aria-label="重置视图">
+        <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 2.6 5.9"/><path d="M4 6v5h5"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── SOLAR SYSTEM STAGE ── -->
+  <section class="stage-zone" id="stage">
+    <div class="hero">
+      <p class="vlabel">STELLAR ATLAS / SYSTEM 08</p>
+      <p class="eyebrow">01 / SYSTEM MAP</p>
+      <h1>行星，<br>循着各自的节拍运行。</h1>
+      <p class="lede">拖动速度，观察八颗行星如何在同一个太阳系中保持各自的距离与节奏。</p>
+    </div>
+
+    <div class="canvas-holder" style="position:absolute;inset:0">
+      <canvas class="stage-canvas" id="orrery" aria-label="太阳系行星运动模拟">
+        当前浏览器无法显示 Canvas 动画。
+      </canvas>
+    </div>
+
+    <div class="stage-foot">
+      <span>轨道运动 / 8 行星 / 实时模拟</span>
+      <span class="right">坐标系 / HELIOCENTRIC</span>
+    </div>
+  </section>
+
+  <!-- ── INSTRUMENT STRIP ── -->
+  <section class="strip" aria-label="模拟控制">
+    <div class="cell">
+      <h2>模拟速度</h2>
+      <div class="speed-row">
+        <button class="step" id="btnMinus" aria-label="降低速度">−</button>
+        <input type="range" id="speed" min="0.1" max="5" step="0.1" value="1"
+               aria-label="模拟速度倍率" aria-valuetext="1.0 倍">
+        <button class="step" id="btnPlus" aria-label="提高速度">＋</button>
+        <span class="speed-val" id="speedVal">1.0×</span>
+      </div>
+      <div class="presets" id="presets">
+        <button data-speed="0.25" aria-pressed="false">0.25×</button>
+        <button data-speed="1" aria-pressed="true">1×</button>
+        <button data-speed="5" aria-pressed="false">5×</button>
+      </div>
+    </div>
+
+    <div class="cell">
+      <h2>观测对象</h2>
+      <div class="sel-name">
+        <span class="idx" id="selIdx">03</span>
+        <span class="big-val" id="selName">地球</span>
+      </div>
+      <p class="sub-val" id="selSub">地球 · 第 3 颗行星</p>
+      <div class="nav-row">
+        <button class="nav-btn" id="btnPrev">
+          <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>上一颗
+        </button>
+        <button class="nav-btn" id="btnNext">
+          下一颗<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="cell">
+      <h2>运行状态</h2>
+      <p class="status-line"><span class="dot" id="stDot"></span><span id="stText">运行中</span></p>
+      <p class="clock"><small>模拟时间</small><span id="simClock">00:00:00</span></p>
+      <button class="play-btn" id="btnPlay">
+        <svg viewBox="0 0 24 24" id="playIcon"><path d="M9 5v14M15 5v14"/></svg>
+        <span id="playLabel">暂停</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- ── DATA LEDGER ── -->
+  <section class="ledger" id="ledger">
+    <div class="ledger-head">
+      <p class="eyebrow">02 / DATA LEDGER</p>
+      <h2>行星数据</h2>
+    </div>
+    <div class="table-scroll">
+      <table id="ledgerTable">
+        <caption class="sr">太阳系八颗行星的轨道与物理参数</caption>
+        <thead>
+          <tr>
+            <th scope="col">标记</th>
+            <th scope="col">中文名</th>
+            <th scope="col">英文名</th>
+            <th scope="col">轨道序号</th>
+            <th scope="col">公转周期</th>
+            <th scope="col">自转周期</th>
+            <th scope="col">轨道半径</th>
+            <th scope="col">直径</th>
+            <th scope="col">轴倾角</th>
+            <th scope="col">平均温度</th>
+          </tr>
+        </thead>
+        <tbody id="ledgerBody"></tbody>
+      </table>
+      <p class="scroll-hint">左右滑动查看完整数据</p>
+    </div>
+  </section>
+
+  <!-- ── CALIBRATION FOOTER ── -->
+  <footer class="foot" id="notes">
+    <div class="notes">
+      <p>数据用于直观比较行星运动节奏。</p>
+      <p>轨道速度以地球公转周期为基准进行比例化处理。</p>
+      <p>此模拟用于视觉演示，不用于天文导航或科研计算。</p>
+    </div>
+    <div class="foot-meta">
+      <span>STELLAR ATLAS / SYSTEM 08</span>
+      <span>UTC 2026-09-25</span>
+      <span>坐标系 / HELIOCENTRIC</span>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ══ palette ══════════════════════════════════════════ */
+const C = {
+  paper:"#E9E5DA", paperLight:"#F4F1E8", ink:"#101820",
+  inkMuted:"#667078", inkFaint:"#A7AAA4", grid:"#C7C5BC",
+  lineDark:"#34444B", volt:"#E4572E", volt2:"#2E7180",
+  orbit:"#8C9694", sunBody:"#D9A05B"
+};
+
+/* ══ planet data ══════════════════════════════════════ */
+const PLANETS = [
+  {zh:"水星",   en:"Mercury", no:"01", au:0.387, period:0.241,
+   per:"87.97 地球日",  rot:"58.65 地球日",     rad:"0.39 AU",  dia:"4,879 km",   tilt:"0.03°",  temp:"167°C",
+   size:10, color:"#6B625A", angle:2.20},
+  {zh:"金星",   en:"Venus",   no:"02", au:0.723, period:0.615,
+   per:"224.70 地球日", rot:"243.02 地球日",    rad:"0.72 AU",  dia:"12,104 km",  tilt:"177.4°", temp:"464°C",
+   size:15, color:"#C49B5A", angle:5.00},
+  {zh:"地球",   en:"Earth",   no:"03", au:1.000, period:1.000,
+   per:"365.25 地球日", rot:"23.93 小时",       rad:"1.00 AU",  dia:"12,742 km",  tilt:"23.5°",  temp:"15°C",
+   size:17, color:"#3E7384", angle:0.60},
+  {zh:"火星",   en:"Mars",    no:"04", au:1.524, period:1.881,
+   per:"686.98 地球日", rot:"24.62 小时",       rad:"1.52 AU",  dia:"6,779 km",   tilt:"25.2°",  temp:"-63°C",
+   size:13, color:"#B85C38", angle:3.40},
+  {zh:"木星",   en:"Jupiter", no:"05", au:5.203, period:11.86,
+   per:"11.86 地球年",  rot:"9.93 小时",        rad:"5.20 AU",  dia:"139,820 km", tilt:"3.1°",   temp:"-110°C",
+   size:29, color:"#B58B63", angle:1.50},
+  {zh:"土星",   en:"Saturn",  no:"06", au:9.537, period:29.45,
+   per:"29.45 地球年",  rot:"10.66 小时",       rad:"9.54 AU",  dia:"116,460 km", tilt:"26.7°",  temp:"-140°C",
+   size:25, color:"#C3A56C", angle:4.60},
+  {zh:"天王星", en:"Uranus",  no:"07", au:19.19, period:84.02,
+   per:"84.02 地球年",  rot:"17.23 小时",       rad:"19.19 AU", dia:"50,724 km",  tilt:"97.8°",  temp:"-195°C",
+   size:20, color:"#6E9AA0", angle:2.90},
+  {zh:"海王星", en:"Neptune", no:"08", au:30.07, period:164.8,
+   per:"164.80 地球年", rot:"16.06 小时",       rad:"30.07 AU", dia:"49,244 km",  tilt:"28.3°",  temp:"-200°C",
+   size:19, color:"#3F6077", angle:5.90}
+];
+
+const EARTH_YEAR_SECONDS = 20;               // 地球公转一周 = 20 秒（1.0× 时）
+const BASE_SPEED = (Math.PI * 2) / EARTH_YEAR_SECONDS;
+PLANETS.forEach(p => {
+  p.omega = BASE_SPEED * Math.pow(p.period, -0.35);
+  p.a0 = p.angle;
+});
+
+/* ══ easing ═══════════════════════════════════════════ */
+function bezier(x1, y1, x2, y2){
+  const cx = 3*x1, bx = 3*(x2-x1) - cx, ax = 1 - cx - bx;
+  const cy = 3*y1, by = 3*(y2-y1) - cy, ay = 1 - cy - by;
+  const fx = t => ((ax*t + bx)*t + cx)*t;
+  const dx = t => (3*ax*t + 2*bx)*t + cx;
+  return function(x){
+    let t = x;
+    for (let i=0;i<6;i++){
+      const e = fx(t) - x, d = dx(t);
+      if (Math.abs(e) < 1e-5) break;
+      if (Math.abs(d) < 1e-6) break;
+      t -= e/d;
+    }
+    t = Math.max(0, Math.min(1, t));
+    return ((ay*t + by)*t + cy)*t;
+  };
+}
+const easeLock = bezier(0.22, 1, 0.36, 1);
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+
+/* ══ state ════════════════════════════════════════════ */
+const reducedMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
+let reduced = reducedMQ.matches;
+
+let multiplier = 1;
+let running = !reduced;
+let speedCurrent = running ? 1 : 0;
+let simTime = 0;
+let selected = 2;                     // 地球
+let lockStart = -1;
+let markerStart = -1;
+let markerOffset = -0.30;
+let revealStart = performance.now();
+let pointer = {x:-9999, y:-9999, active:false};
+let W = 0, H = 0, dpr = 1;
+let sun = {x:0, y:0, r:37};
+let nf = {x:0, y:0, w:0, h:0};
+let rxOuter = 0, ryOuter = 0, orbits = [], sizeScale = 1;
+
+/* ══ canvas setup ═════════════════════════════════════ */
+const canvas = document.getElementById("orrery");
+const ctx = canvas.getContext("2d");
+const holder = canvas.parentElement;
+
+function layout(){
+  const r = holder.getBoundingClientRect();
+  W = Math.max(240, r.width);
+  H = Math.max(240, r.height);
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width  = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  canvas.style.width  = W + "px";
+  canvas.style.height = H + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const wide = (W / H) > 1.05;
+  sun.x = wide ? W * 0.62 : W * 0.52;
+  sun.y = wide ? H * 0.50 : H * 0.46;
+
+  nf.x = W * 0.60; nf.y = 0; nf.w = W * 0.40; nf.h = H * 0.66;
+
+  const horizontal = Math.min(sun.x - 24, (W - 24) - sun.x);
+  const vertical   = (H - 96) * 0.81;
+  rxOuter = Math.min(horizontal, vertical, W * 0.52);
+  ryOuter = rxOuter / 1.62;
+
+  sun.r = Math.min(37, W * 0.075);
+  sizeScale = clamp(rxOuter / 380, 0.55, 1);
+
+  orbits = PLANETS.map(p => {
+    const f = 0.20 + 0.80 * Math.pow(p.au / 30.07, 0.34);
+    return {rx: rxOuter * f, ry: ryOuter * f};
+  });
+}
+layout();
+
+if (window.ResizeObserver){
+  const ro = new ResizeObserver(layout);
+  ro.observe(holder);
+} else {
+  window.addEventListener("resize", layout);
+}
+window.addEventListener("orientationchange", () => setTimeout(layout, 200));
+
+/* ══ helpers ══════════════════════════════════════════ */
+function pos(i){
+  const o = orbits[i], a = PLANETS[i].angle;
+  return {x: sun.x + o.rx * Math.cos(a), y: sun.y + o.ry * Math.sin(a)};
+}
+function inNight(x, y){
+  return x >= nf.x && y <= nf.h;
+}
+function monoFont(px, weight){ return (weight || 400) + " " + px + "px " + '"IBM Plex Mono","SFMono-Regular",Consolas,monospace'; }
+function sansFont(px, weight){ return (weight || 400) + " " + px + "px " + '"Noto Sans SC","PingFang SC",sans-serif'; }
+
+/* ══ drawing ══════════════════════════════════════════ */
+function draw(now){
+  const t = now / 1000;
+  const labelPx = W < 420 ? 10 : 12;
+  const microPx = W < 420 ? 9 : 10;
+
+  /* 1 · paper */
+  ctx.fillStyle = C.paper;
+  ctx.fillRect(0, 0, W, H);
+
+  /* 2 · night field (observatory window) */
+  ctx.fillStyle = C.ink;
+  ctx.fillRect(nf.x, nf.y, nf.w, nf.h);
+  ctx.strokeStyle = C.lineDark;
+  ctx.lineWidth = 1;
+  const b = 10;
+  [[nf.x, nf.y, 1, 1], [nf.x + nf.w, nf.y, -1, 1],
+   [nf.x, nf.y + nf.h, 1, -1], [nf.x + nf.w, nf.y + nf.h, -1, -1]].forEach(([x, y, sx, sy]) => {
+    ctx.beginPath();
+    ctx.moveTo(x + sx * 6, y);
+    ctx.lineTo(x + sx * (6 + b), y);
+    ctx.moveTo(x, y + sy * 6);
+    ctx.lineTo(x, y + sy * (6 + b));
+    ctx.stroke();
+  });
+
+  /* 3 · calibration grid — clipped to the paper region */
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, W, H);
+  ctx.rect(nf.x, nf.y, nf.w, nf.h);
+  ctx.clip("evenodd");
+  ctx.strokeStyle = C.inkFaint;
+  ctx.globalAlpha = 0.22;
+  ctx.lineWidth = 1;
+  const step = 48, s = 2.5;
+  for (let gx = step * 0.5; gx < W; gx += step){
+    for (let gy = step * 0.5; gy < H; gy += step){
+      ctx.beginPath();
+      ctx.moveTo(gx - s, gy); ctx.lineTo(gx + s, gy);
+      ctx.moveTo(gx, gy - s); ctx.lineTo(gx, gy + s);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+
+  /* 4 · orbit locks / selection dimming */
+  let dim = 1;
+  if (lockStart >= 0){
+    const el = t - lockStart;
+    if (el < 0.42) dim = 1 + (0.35 - 1) * easeLock(el / 0.42);
+    else {
+      const p2 = clamp((el - 0.42) / 0.5, 0, 1);
+      dim = 0.35 + (0.75 - 0.35) * easeLock(p2);
+    }
+  }
+
+  /* 5 · orbital paths */
+  const reveal = clamp((now - revealStart) / 900, 0, 1);
+  for (let i = 0; i < PLANETS.length; i++){
+    const o = orbits[i];
+    const isSel = (i === selected);
+
+    let alpha = isSel ? 1 : dim;
+
+    /* cursor proximity brightening */
+    if (pointer.active && !reduced && !isSel){
+      const dx = (pointer.x - sun.x) / (o.rx || 1);
+      const dy = (pointer.y - sun.y) / (o.ry || 1);
+      const d = Math.abs(Math.sqrt(dx * dx + dy * dy) - 1) * Math.min(o.rx, o.ry);
+      alpha += clamp(1 - d / 60, 0, 1) * 0.12;
+    }
+
+    const f = reduced ? 1 : clamp((reveal * 900 - i * 40) / 520, 0, 1);
+    if (f <= 0) continue;
+
+    ctx.globalAlpha = clamp(alpha, 0, 1);
+    ctx.lineWidth = isSel ? 2 : 1;
+    ctx.strokeStyle = isSel ? C.volt : C.orbit;
+    ctx.beginPath();
+    ctx.ellipse(sun.x, sun.y, o.rx, o.ry, 0, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  /* 6 · measurement layer */
+  const o8 = orbits[7];
+  ctx.strokeStyle = C.inkFaint;
+  ctx.lineWidth = 1;
+  ctx.font = monoFont(microPx);
+  ctx.fillStyle = C.inkMuted;
+  for (let d = 0; d < 360; d += 30){
+    const a = (d - 90) * Math.PI / 180;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const x1 = sun.x + o8.rx * ca, y1 = sun.y + o8.ry * sa;
+    const x2 = sun.x + (o8.rx + 7) * ca, y2 = sun.y + (o8.ry + 7) * sa;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    if (d % 90 === 0){
+      const tx = sun.x + (o8.rx + 22) * ca, ty = sun.y + (o8.ry + 22) * sa;
+      ctx.fillStyle = inNight(tx, ty) ? "rgba(244,241,232,.62)" : C.inkMuted;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(d + "°", tx, ty);
+    }
+  }
+
+  /* crosshairs — cursor-responsive, max 4px */
+  ctx.strokeStyle = C.volt2;
+  ctx.lineWidth = 1;
+  [[0.785, 1], [2.356, 1], [3.927, 1], [5.498, 1]].forEach(([a]) => {
+    const cx = sun.x + rxOuter * 0.55 * Math.cos(a);
+    const cy = sun.y + ryOuter * 0.55 * Math.sin(a);
+    let ox = 0, oy = 0;
+    if (pointer.active && !reduced){
+      const vx = pointer.x - cx, vy = pointer.y - cy;
+      const m = Math.hypot(vx, vy) || 1;
+      const k = clamp(1 - m / 260, 0, 1) * 4;
+      ox = vx / m * k; oy = vy / m * k;
+    }
+    ctx.beginPath();
+    ctx.moveTo(cx - 5 + ox, cy + oy); ctx.lineTo(cx + 5 + ox, cy + oy);
+    ctx.moveTo(cx + ox, cy - 5 + oy); ctx.lineTo(cx + ox, cy + 5 + oy);
+    ctx.stroke();
+  });
+
+  /* 7 · sun */
+  const sunAlpha = reduced ? 1 : easeLock(clamp((now - revealStart) / 520, 0, 1));
+  const sr = sun.r * (0.7 + 0.3 * sunAlpha);
+  ctx.globalAlpha = sunAlpha;
+  ctx.strokeStyle = C.ink; ctx.lineWidth = 1;
+  [0, 120, 240].forEach(deg => {
+    const a = deg * Math.PI / 180;
+    ctx.beginPath();
+    ctx.moveTo(sun.x + Math.cos(a) * (sr + 6), sun.y + Math.sin(a) * (sr + 6));
+    ctx.lineTo(sun.x + Math.cos(a) * (sr + 17), sun.y + Math.sin(a) * (sr + 17));
+    ctx.stroke();
+  });
+  ctx.fillStyle = C.sunBody;
+  ctx.beginPath(); ctx.arc(sun.x, sun.y, sr, 0, Math.PI * 2); ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = C.volt;
+  ctx.beginPath(); ctx.arc(sun.x, sun.y, 5 * sizeScale + 1, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  /* 8 · planets */
+  for (let i = 0; i < PLANETS.length; i++){
+    const p = PLANETS[i], o = orbits[i], a = p.angle;
+    const px = sun.x + o.rx * Math.cos(a), py = sun.y + o.ry * Math.sin(a);
+    const r = (p.size / 2) * sizeScale;
+    const isSel = (i === selected);
+
+    ctx.globalAlpha = isSel ? 1 : clamp(dim, 0, 1);
+
+    if (p.en === "Saturn"){
+      ctx.save();
+      ctx.translate(px, py); ctx.rotate(-0.32);
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * 1.85, r * 0.62, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(0, 0, r * 1.45, r * 0.46, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.stroke();
+
+    if (p.en === "Jupiter"){
+      ctx.save();
+      ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.clip();
+      ctx.strokeStyle = "rgba(16,24,32,.34)"; ctx.lineWidth = 1.4;
+      [-0.42, 0.10, 0.46].forEach(k => {
+        ctx.beginPath(); ctx.moveTo(px - r, py + r * k); ctx.lineTo(px + r, py + r * k); ctx.stroke();
+      });
+      ctx.fillStyle = "rgba(16,24,32,.30)";
+      ctx.beginPath(); ctx.ellipse(px - r * 0.30, py + r * 0.16, r * 0.26, r * 0.15, -0.25, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    if (p.en === "Mercury"){
+      ctx.fillStyle = "rgba(16,24,32,.32)";
+      ctx.beginPath(); ctx.arc(px + r * 0.30, py - r * 0.26, r * 0.30, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(px - r * 0.34, py + r * 0.30, r * 0.20, 0, Math.PI * 2); ctx.fill();
+    }
+    if (p.en === "Earth"){
+      ctx.fillStyle = "rgba(233,229,218,.55)";
+      ctx.beginPath(); ctx.arc(px - r * 0.28, py - r * 0.22, r * 0.30, 0, Math.PI * 2); ctx.fill();
+    }
+    if (p.en === "Mars"){
+      ctx.fillStyle = "rgba(16,24,32,.26)";
+      ctx.beginPath(); ctx.arc(px - r * 0.22, py + r * 0.24, r * 0.34, 0, Math.PI * 2); ctx.fill();
+    }
+
+    /* 轨道锁定 marker — chases the body, converges to 6px orange */
+    if (isSel && lockStart >= 0){
+      const mo = markerOffset;
+      const ma = a + mo;
+      const mx = sun.x + o.rx * Math.cos(ma), my = sun.y + o.ry * Math.sin(ma);
+      ctx.fillStyle = C.volt;
+      ctx.beginPath(); ctx.arc(mx, my, 3 * sizeScale + 1, 0, Math.PI * 2); ctx.fill();
+    }
+
+    /* labels */
+    const ly = py - r - 10;
+    ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = inNight(px, ly) ? "#F4F1E8" : C.ink;
+    ctx.font = sansFont(labelPx, 500);
+    ctx.fillText(p.zh, px, ly);
+    ctx.globalAlpha = 1;
+  }
+
+  /* 9 · selected callout — leader line + overhanging label */
+  {
+    const p = PLANETS[selected], o = orbits[selected], a = p.angle;
+    const px = sun.x + o.rx * Math.cos(a), py = sun.y + o.ry * Math.sin(a);
+    const r = (p.size / 2) * sizeScale;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const ext = clamp((t - lockStart) / 0.42, 0, 1);
+    const k = lockStart < 0 ? 1 : easeLock(ext);
+
+    const l1x = px + ca * (r + 4), l1y = py + sa * (r + 4);
+    const l2x = px + ca * (r + 4 + 12 + 22 * k), l2y = py + sa * (r + 4 + 12 + 22 * k);
+    const dir = ca >= 0 ? 1 : -1;
+    const l3x = l2x + dir * (16 + 12 * k), l3y = l2y;
+
+    ctx.strokeStyle = C.volt; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(l1x, l1y); ctx.lineTo(l2x, l2y); ctx.lineTo(l3x, l3y);
+    ctx.stroke();
+    ctx.fillStyle = C.volt;
+    ctx.beginPath(); ctx.arc(l2x, l2y, 2, 0, Math.PI * 2); ctx.fill();
+
+    const tx = l3x + dir * 6;
+    ctx.textAlign = dir > 0 ? "left" : "right";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = inNight(tx, l3y) ? "#F4F1E8" : C.ink;
+    ctx.font = monoFont(microPx, 500);
+    ctx.fillText(p.no + " / " + p.zh, tx, l3y - 8);
+    ctx.font = monoFont(microPx);
+    ctx.fillStyle = inNight(tx, l3y) ? "rgba(244,241,232,.62)" : C.inkMuted;
+    ctx.fillText(p.en.toUpperCase(), tx, l3y + 8);
+  }
+
+  /* 10 · night-field readouts */
+  const sel = PLANETS[selected];
+  let deg = ((sel.angle * 180 / Math.PI) % 360 + 360) % 360;
+  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  ctx.font = monoFont(microPx);
+  ctx.fillStyle = "rgba(244,241,232,.62)";
+  ctx.fillText("观测窗口 / OBSERVATORY WINDOW", nf.x + 24, 36);
+  ctx.fillStyle = C.paperLight;
+  ctx.font = monoFont(11, 500);
+  ctx.fillText("ECLIPTIC LONGITUDE " + deg.toFixed(1) + "°", nf.x + 24, nf.y + nf.h - 34);
+  ctx.font = monoFont(microPx);
+  ctx.fillStyle = "rgba(244,241,232,.55)";
+  ctx.fillText(sel.en.toUpperCase() + " / ORBIT " + sel.no, nf.x + 24, nf.y + nf.h - 18);
+}
+
+/* ══ animation loop ═══════════════════════════════════ */
+let last = performance.now();
+function frame(now){
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+
+  const target = running ? multiplier : 0;
+  speedCurrent += (target - speedCurrent) * (1 - Math.exp(-dt / 0.09));
+
+  if (speedCurrent > 0.0001){
+    for (let i = 0; i < PLANETS.length; i++){
+      PLANETS[i].angle += PLANETS[i].omega * speedCurrent * dt;
+    }
+    simTime += dt * speedCurrent;
+  }
+
+  if (markerStart >= 0){
+    const p = clamp((now - markerStart) / 360, 0, 1);
+    markerOffset = -0.30 * (1 - easeLock(p));
+    if (p >= 1) markerStart = -1;
+  }
+
+  draw(now);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ══ UI wiring ════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const speedInput = $("speed"), speedVal = $("speedVal"), pillSpeed = $("pillSpeed");
+const selName = $("selName"), selIdx = $("selIdx"), selSub = $("selSub");
+const stText = $("stText"), stDot = $("stDot"), hdrDot = $("hdrDot"), hdrStatus = $("hdrStatus");
+const simClock = $("simClock"), playLabel = $("playLabel"), playIcon = $("playIcon");
+
+function fmtSpeed(v){ return v.toFixed(1) + "×"; }
+
+function setMultiplier(v, fromInput){
+  multiplier = clamp(Math.round(v * 10) / 10, 0.1, 5);
+  if (!fromInput) speedInput.value = multiplier;
+  const pct = ((multiplier - 0.1) / 4.9) * 100;
+  speedInput.style.setProperty("--fill", pct + "%");
+  speedInput.setAttribute("aria-valuetext", fmtSpeed(multiplier) + " 倍");
+  speedVal.textContent = fmtSpeed(multiplier);
+  pillSpeed.textContent = fmtSpeed(multiplier);
+  [...$("presets").children].forEach(b => {
+    b.setAttribute("aria-pressed", String(Math.abs(parseFloat(b.dataset.speed) - multiplier) < 0.05));
+  });
+}
+
+function setRunning(v){
+  running = v;
+  stText.textContent = v ? "运行中" : (reduced ? "动画已暂停" : "已暂停");
+  hdrStatus.textContent = v ? "实时模拟" : "模拟已暂停";
+  stDot.classList.toggle("paused", !v);
+  hdrDot.classList.toggle("paused", !v);
+  playLabel.textContent = v ? "暂停" : "继续";
+  $("btnPlay").setAttribute("aria-label", v ? "暂停模拟" : "继续模拟");
+  playIcon.innerHTML = v
+    ? '<path d="M9 5v14M15 5v14"/>'
+    : '<path d="M8 5l11 7-11 7z"/>';
+}
+
+function selectPlanet(i, focusRow){
+  selected = ((i % PLANETS.length) + PLANETS.length) % PLANETS.length;
+  const p = PLANETS[selected];
+  lockStart = performance.now() / 1000;
+  markerStart = performance.now();
+  markerOffset = -0.30;
+
+  selName.textContent = p.zh;
+  selIdx.textContent = p.no;
+  selSub.textContent = p.zh + " · 第 " + (selected + 1) + " 颗行星";
+
+  [...$("ledgerBody").children].forEach((tr, k) => {
+    tr.classList.toggle("sel", k === selected);
+    tr.classList.remove("sweep");
+    if (k === selected && !reduced){
+      void tr.offsetWidth;
+      tr.classList.add("sweep");
+    }
+    const btn = tr.querySelector(".mark");
+    if (btn) btn.setAttribute("aria-pressed", String(k === selected));
+  });
+
+  if (focusRow){
+    const row = $("ledgerBody").children[selected];
+    if (row) row.querySelector(".mark").focus({preventScroll:true});
+  }
+}
+
+/* speed controls */
+speedInput.addEventListener("input", e => setMultiplier(parseFloat(e.target.value), true));
+$("btnMinus").addEventListener("click", () => setMultiplier(multiplier - 0.1));
+$("btnPlus").addEventListener("click", () => setMultiplier(multiplier + 0.1));
+$("presets").addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (b) setMultiplier(parseFloat(b.dataset.speed));
+});
+
+/* navigation */
+$("btnPrev").addEventListener("click", () => selectPlanet(selected - 1));
+$("btnNext").addEventListener("click", () => selectPlanet(selected + 1));
+$("btnPlay").addEventListener("click", () => setRunning(!running));
+$("btnReset").addEventListener("click", () => {
+  PLANETS.forEach(p => p.angle = p.a0);
+  simTime = 0;
+  setMultiplier(1);
+  setRunning(!reduced);
+  revealStart = performance.now();
+  selectPlanet(2);
+});
+$("btnInfo").addEventListener("click", () => {
+  document.getElementById("notes").scrollIntoView({behavior: reduced ? "auto" : "smooth", block:"start"});
+});
+
+/* keyboard: arrows / space / enter */
+document.addEventListener("keydown", e => {
+  const tag = (e.target.tagName || "").toLowerCase();
+  const inRange = e.target === speedInput;
+  if (e.key === " " && !inRange && tag !== "button" && tag !== "a"){
+    e.preventDefault();
+    setRunning(!running);
+    return;
+  }
+  if (inRange) return;
+  if (e.key === "ArrowLeft"){ e.preventDefault(); selectPlanet(selected - 1); }
+  if (e.key === "ArrowRight"){ e.preventDefault(); selectPlanet(selected + 1); }
+  if (e.key === "Enter" && tag !== "button" && tag !== "a"){ selectPlanet(selected); }
+});
+
+/* pointer measurement layer */
+function updatePointer(e){
+  const r = canvas.getBoundingClientRect();
+  pointer.x = e.clientX - r.left;
+  pointer.y = e.clientY - r.top;
+  pointer.active = true;
+}
+canvas.addEventListener("pointermove", updatePointer);
+canvas.addEventListener("pointerleave", () => { pointer.active = false; });
+
+/* ══ data ledger ══════════════════════════════════════ */
+const body = $("ledgerBody");
+PLANETS.forEach((p, i) => {
+  const tr = document.createElement("tr");
+  tr.dataset.i = i;
+  const tiltCell = (p.en === "Earth")
+    ? '<td class="val"><span class="tip-wrap">' + p.tilt +
+      '<button class="tip-icon" aria-label="轴倾角说明">i</button>' +
+      '<span class="tip" role="tooltip">地球自转轴倾角 23.5°</span></span></td>'
+    : '<td class="val">' + p.tilt + '</td>';
+  tr.innerHTML =
+    '<td><button class="mark" aria-label="选择' + p.zh + '" aria-pressed="false">' + p.no + '</button></td>' +
+    '<td class="zh">' + p.zh + '</td>' +
+    '<td class="en">' + p.en + '</td>' +
+    '<td class="num">' + p.no + '</td>' +
+    '<td class="val">' + p.per + '</td>' +
+    '<td class="val">' + p.rot + '</td>' +
+    '<td class="val">' + p.rad + '</td>' +
+    '<td class="val">' + p.dia + '</td>' +
+    tiltCell +
+    '<td class="val">' + p.temp + '</td>';
+  tr.addEventListener("click", e => {
+    if (e.target.closest(".tip-icon")) return;
+    selectPlanet(i);
+  });
+  body.appendChild(tr);
+});
+
+/* ══ simulated clock ══════════════════════════════════ */
+setInterval(() => {
+  const s = Math.floor(simTime);
+  const hh = String(Math.floor(s / 3600)).padStart(2, "0");
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  simClock.textContent = hh + ":" + mm + ":" + ss;
+}, 250);
+
+/* ══ reduced motion ═══════════════════════════════════ */
+function applyReduced(){
+  reduced = reducedMQ.matches;
+  if (reduced){ setRunning(false); }
+}
+if (reducedMQ.addEventListener) reducedMQ.addEventListener("change", applyReduced);
+else if (reducedMQ.addListener) reducedMQ.addListener(applyReduced);
+
+/* ══ init ═════════════════════════════════════════════ */
+setMultiplier(1);
+setRunning(!reduced);
+selectPlanet(2);
+if (reduced) stText.textContent = "动画已暂停";
+
+})();
+</script>
+</body>
+</html>
